@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  body {
+    @apply bg-gray-50 text-gray-900;
+  }
+}
+
+@layer utilities {
+  .animate-in {
+    animation: animateIn 0.2s ease-out;
+  }
+  
+  @keyframes animateIn {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  
+  .fade-in {
+    animation: fadeIn 0.2s ease-out;
+  }
+  
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  
+  .zoom-in-95 {
+    animation: zoomIn95 0.2s ease-out;
+  }
+  
+  @keyframes zoomIn95 {
+    from {
+      transform: scale(0.95);
+    }
+    to {
+      transform: scale(1);
+    }
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-6 py-3 
+           bg-primary-500 text-white font-semibold rounded-xl
+           hover:bg-primary-600 active:bg-primary-700
+           disabled:bg-gray-300 disabled:cursor-not-allowed
+           transition-colors duration-200;
+  }
+  
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-6 py-3 
+           bg-white text-gray-700 font-semibold rounded-xl
+           border-2 border-gray-200
+           hover:bg-gray-50 hover:border-gray-300
+           disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed
+           transition-colors duration-200;
+  }
+}
