@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { User } from '@supabase/supabase-js';
-import { createClient } from '@/lib/supabase/client';
+import { createClient, isSupabaseBrowserConfigured } from '@/lib/supabase/client';
 import { LoginModal } from '@/components/LoginModal';
 
 type AuthContextValue = {
@@ -54,6 +54,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    if (!isSupabaseBrowserConfigured()) {
+      setUser(null);
+      setE2eUser(false);
+      setLoading(false);
+      return;
+    }
+
     const supabase = createClient();
     let cancelled = false;
 
@@ -83,6 +90,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     if (process.env.NEXT_PUBLIC_E2E_TEST === '1') {
+      setUser(null);
+      return;
+    }
+    if (!isSupabaseBrowserConfigured()) {
       setUser(null);
       return;
     }

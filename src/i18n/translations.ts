@@ -29,6 +29,8 @@ export const translations = {
       apiKeyMissing: 'OpenAI API key not configured',
       fetchFailed: 'Failed to generate recipes. Please try again.',
       checkoutFailed: 'Could not start checkout. Check billing settings (Polar) and try again.',
+      authNotConfigured:
+        'Sign-in is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY on the server.',
     },
     language: 'Language',
     generateImages: 'Generate images for recipes',
@@ -89,6 +91,8 @@ export const translations = {
       apiKeyMissing: 'OpenAI API कुञ्जी कन्फिगर गरिएको छैन',
       fetchFailed: 'रेसिपी उत्पन्न गर्न असफल भयो। कृपया फेरि प्रयास गर्नुहोस्।',
       checkoutFailed: 'चेकआउट सुरु गर्न सकिएन। बिलिङ (Polar) जाँच गर्नुहोस्।',
+      authNotConfigured:
+        'साइन-इन कन्फिगर गरिएको छैन। सर्भरमा NEXT_PUBLIC_SUPABASE_URL र NEXT_PUBLIC_SUPABASE_ANON_KEY सेट गर्नुहोस्।',
     },
     language: 'भाषा',
     generateImages: 'रेसिपीहरूको लागि तस्बिरहरू बनाउनुहोस्',

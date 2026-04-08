@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, FormEvent } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { createClient, isSupabaseBrowserConfigured } from '@/lib/supabase/client';
 import { useLanguage } from '@/i18n/LanguageContext';
 
 type LoginModalProps = {
@@ -25,6 +25,10 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
     try {
       if (process.env.NEXT_PUBLIC_E2E_TEST === '1') {
         setError('Sign-in is disabled in this environment.');
+        return;
+      }
+      if (!isSupabaseBrowserConfigured()) {
+        setError(t.errors.authNotConfigured);
         return;
       }
       const supabase = createClient();
