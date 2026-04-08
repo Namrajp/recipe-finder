@@ -6,7 +6,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { buildRecipeCacheKey } from '@/lib/recipe-cache-key';
 import { generateImageHash, imageExists, saveImage } from '@/lib/storage';
 import { getFreeSearchLimit } from '@/lib/polar';
-import { fetchPolarProState } from '@/lib/subscription-state';
+import { fetchPolarProStateForUser } from '@/lib/subscription-state';
 
 const CACHE_MS = 24 * 60 * 60 * 1000;
 
@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 500 });
     }
 
-    const polarState = await fetchPolarProState(user.id);
+    const polarState = await fetchPolarProStateForUser({ id: user.id, email: user.email });
 
     const { data: usageRow } = await service
       .from('usage')

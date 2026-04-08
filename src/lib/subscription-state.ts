@@ -27,42 +27,88 @@ export async function fetchPolarProState(externalId: string): Promise<PolarProSt
   }
 
   const productId = getPolarProductId();
+  const emptyState: PolarProState = {
+    isPro: false,
+    cancelAtPeriodEnd: false,
+    currentPeriodEnd: null,
+    subscriptionId: null,
+  };
 
-  try {
-    const state = await polar.customers.getStateExternal({ externalId });
-    if (state.type !== 'individual') {
-      return {
-        isPro: false,
-        cancelAtPeriodEnd: false,
-        currentPeriodEnd: null,
-        subscriptionId: null,
-      };
-    }
+  const toProState = (state: {
+    type: string;
+    activeSubscriptions: Array<{
+      status: string;
+      productId?: string | null;
+      cancelAtPeriodEnd?: boolean | null;
+      currentPeriodEnd?: unknown;
+      id: string;
+    }>;
+  }): PolarProState => {
+    if (state.type !== 'individual') return emptyState;
     const active = state.activeSubscriptions.filter(
       (s) => s.status === 'active' || s.status === 'trialing'
     );
-    const match = productId ? active.filter((s) => s.productId === productId) : active;
-    const sub = match[0];
-    if (!sub) {
-      return {
-        isPro: false,
-        cancelAtPeriodEnd: false,
-        currentPeriodEnd: null,
-        subscriptionId: null,
-      };
-    }
+    if (active.length === 0) return emptyState;
+
+    // Prefer configured product match, but gracefully fall back to any active/trialing subscription.
+    const matched = productId ? active.find((s) => s.productId === productId) ?? active[0] : active[0];
     return {
       isPro: true,
-      cancelAtPeriodEnd: Boolean(sub.cancelAtPeriodEnd),
-      currentPeriodEnd: periodEndToIso(sub.currentPeriodEnd),
-      subscriptionId: sub.id,
+      cancelAtPeriodEnd: Boolean(matched.cancelAtPeriodEnd),
+      currentPeriodEnd: periodEndToIso(matched.currentPeriodEnd),
+      subscriptionId: matched.id,
+    };
+  };
+
+  try {
+    const stateExternal = await polar.customers.getStateExternal({ externalId });
+    const externalResolved = toProState(stateExternal);
+    if (externalResolved.isPro) {
+      return externalResolved;
+    }
+  } catch {
+    // Fall back below (e.g. customer external ID not linked in hosted checkout flow).
+  }
+
+  return emptyState;
+}
+
+export async function fetchPolarProStateForUser(user: {
+  id: string;
+  email?: string | null;
+}): Promise<PolarProState> {
+  const byExternal = await fetchPolarProState(user.id);
+  if (byExternal.isPro) return byExternal;
+
+  if (!user.email) return byExternal;
+
+  const polar = getPolarClient();
+  if (!polar) return byExternal;
+
+  try {
+    const list = await polar.customers.list({ email: user.email, limit: 1 });
+    const firstPage = await list.next();
+    if (!firstPage) return byExternal;
+    const customer = firstPage.result.items[0];
+    if (!customer?.id) return byExternal;
+
+    const stateById = await polar.customers.getState({ id: customer.id });
+    if (stateById.type !== 'individual') return byExternal;
+
+    const productId = getPolarProductId();
+    const active = stateById.activeSubscriptions.filter(
+      (s) => s.status === 'active' || s.status === 'trialing'
+    );
+    if (active.length === 0) return byExternal;
+    const matched = productId ? active.find((s) => s.productId === productId) ?? active[0] : active[0];
+
+    return {
+      isPro: true,
+      cancelAtPeriodEnd: Boolean(matched.cancelAtPeriodEnd),
+      currentPeriodEnd: periodEndToIso(matched.currentPeriodEnd),
+      subscriptionId: matched.id,
     };
   } catch {
-    return {
-      isPro: false,
-      cancelAtPeriodEnd: false,
-      currentPeriodEnd: null,
-      subscriptionId: null,
-    };
+    return byExternal;
   }
 }
