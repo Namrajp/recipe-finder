@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect, FormEvent } from 'react';
-import { getAuthRedirectOrigin } from '@/lib/app-url';
-import { createClient, isSupabaseBrowserConfigured } from '@/lib/supabase/client';
+import { isSupabaseBrowserConfigured } from '@/lib/supabase/client';
 import { useLanguage } from '@/i18n/LanguageContext';
 
 type LoginModalProps = {
@@ -40,21 +39,28 @@ export function LoginModal({ open, onClose, urlAuthError, onClearUrlAuthError }:
         setError(t.errors.authNotConfigured);
         return;
       }
-      const supabase = createClient();
-      const origin = getAuthRedirectOrigin();
-      const { error: signError } = await supabase.auth.signInWithOtp({
-        email: email.trim(),
-        options: {
-          emailRedirectTo: `${origin}/auth/callback?next=/`,
-        },
+      const res = await fetch('/api/auth/magic-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email: email.trim() }),
       });
-      if (signError) {
-        setError(signError.message);
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok) {
+        setError(typeof data.error === 'string' ? data.error : t.errors.signInNetworkFailed);
         return;
       }
       setSent(true);
-    } catch {
-      setError(t.errors.fetchFailed);
+    } catch (err) {
+      if (process.env.NODE_ENV === 'development') {
+        console.error('signInWithOtp failed', err);
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      const networkLike =
+        err instanceof TypeError ||
+        !msg ||
+        /failed to fetch|load failed|network|aborted|timeout|internet|not connected/i.test(msg);
+      setError(networkLike ? t.errors.signInNetworkFailed : `${t.errors.signInFailed} ${msg}`.trim());
     } finally {
       setLoading(false);
     }

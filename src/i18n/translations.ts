@@ -34,6 +34,9 @@ export const translations = {
       magicLinkExpired:
         'This sign-in link expired or was already used. Request a new magic link from this same browser. Some email apps open links in the background first (link scanners), which burns the link—try “Open in browser”, turning off link tracking, or signing in from an incognito/private window.',
       magicLinkFailed: 'Email sign-in failed. Request a new magic link and try again.',
+      signInNetworkFailed:
+        'Could not reach the sign-in service (network error). Try Wi‑Fi instead of cellular, disable content/VPN blockers for this site, or open the app in Safari instead of an in-app browser. If it keeps failing, confirm this site’s environment variables include your Supabase URL on the server.',
+      signInFailed: 'Sign-in failed.',
     },
     language: 'Language',
     generateImages: 'Generate images for recipes',
@@ -99,6 +102,9 @@ export const translations = {
       magicLinkExpired:
         'यो साइन-इन लिङ्क म्याद सकियो वा पहिले नै प्रयोग भयो। यही ब्राउजरबाट नयाँ जादु लिङ्क माग्नुहोस्। केही इमेल एपले पृष्ठभूमिमा लिङ्क खोल्छन्—“ब्राउजरमा खोल्नुहोस्” वा निजी/इन्कग्निटो प्रयास गर्नुहोस्।',
       magicLinkFailed: 'इमेल साइन-इन असफल। नयाँ जादु लिङ्क माग्नुहोस्।',
+      signInNetworkFailed:
+        'साइन-इन सेवामा जडान हुन सकेन। Wi‑Fi प्रयास गर्नुहोस्, ब्लकर बन्द गर्नुहोस्, वा इन-एप ब्राउजरको सट्टा Safari मा खोल्नुहोस्।',
+      signInFailed: 'साइन-इन असफल।',
     },
     language: 'भाषा',
     generateImages: 'रेसिपीहरूको लागि तस्बिरहरू बनाउनुहोस्',
