@@ -80,7 +80,13 @@ export default function Home() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
-    if (params.get('checkout') === 'success') {
+    const paid =
+      params.get('checkout') === 'success' ||
+      params.get('success') === 'true' ||
+      params.get('success') === '1' ||
+      params.get('payment_status') === 'success' ||
+      params.get('status') === 'success';
+    if (paid) {
       void loadUserData();
       window.history.replaceState({}, '', '/');
     }
