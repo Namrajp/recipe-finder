@@ -3,9 +3,13 @@ import { getSessionUser } from '@/lib/auth/session';
 import { resolvePublicBaseUrl } from '@/lib/app-url';
 import { getPolarClient, getPolarProductId } from '@/lib/polar';
 
-/** Optional: Polar dashboard checkout link when API credentials are not used. */
+function normalizeCheckoutEnvUrl(raw: string): string {
+  return raw.trim().replace(/^["']|["']$/g, '');
+}
+
+/** Polar share / checkout link with customer query params (no API keys required). */
 function fallbackCheckoutUrl(raw: string, user: { id: string; email?: string | null }): string | null {
-  const trimmed = raw.trim();
+  const trimmed = normalizeCheckoutEnvUrl(raw);
   if (!trimmed) return null;
   try {
     const u = new URL(trimmed);
@@ -24,26 +28,36 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  const staticCheckout = process.env.POLAR_CHECKOUT_URL;
+  if (staticCheckout?.trim()) {
+    const url = fallbackCheckoutUrl(staticCheckout, user);
+    if (url) {
+      return NextResponse.json({ url });
+    }
+    return NextResponse.json(
+      {
+        error:
+          'POLAR_CHECKOUT_URL is set but not a valid http(s) URL. Paste the full share/checkout link from Polar (sandbox or production).',
+        code: 'INVALID_CHECKOUT_URL',
+      },
+      { status: 400 }
+    );
+  }
+
   const polar = getPolarClient();
   const productId = getPolarProductId();
   const base = resolvePublicBaseUrl(request);
   const successUrl = `${base}/?checkout=success`;
   const returnUrl = base;
 
-  const staticCheckout = process.env.POLAR_CHECKOUT_URL;
   if (!polar || !productId) {
-    if (staticCheckout) {
-      const url = fallbackCheckoutUrl(staticCheckout, user);
-      if (url) {
-        return NextResponse.json({ url });
-      }
-    }
     const missing: string[] = [];
     if (!process.env.POLAR_ACCESS_TOKEN?.trim()) missing.push('POLAR_ACCESS_TOKEN');
     if (!productId) missing.push('POLAR_PRODUCT_ID');
     return NextResponse.json(
       {
-        error: 'Billing not configured. Add POLAR_ACCESS_TOKEN and POLAR_PRODUCT_ID to .env.local (Polar dashboard → Settings → API / Products). For sandbox, set POLAR_SERVER=sandbox. Optional: POLAR_CHECKOUT_URL for a shareable checkout link.',
+        error:
+          'Billing not configured. Either set POLAR_CHECKOUT_URL (Polar share link — no API keys) or POLAR_ACCESS_TOKEN + POLAR_PRODUCT_ID (Polar → Settings → API / Products). For sandbox API, set POLAR_SERVER=sandbox.',
         code: 'BILLING_NOT_CONFIGURED',
         missing,
       },
