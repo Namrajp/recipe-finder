@@ -6,6 +6,7 @@ import { Recipe } from '@/types/recipe';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { useAuth } from '@/components/AuthProvider';
 import { AppNav } from '@/components/AppNav';
+import { fetchSubscriptionApi } from '@/lib/subscription-client';
 import { RecipeModal } from '@/components/RecipeModal';
 
 const difficultyColors = {
@@ -36,16 +37,15 @@ export default function BookmarksPage() {
     }
     setLoading(true);
     try {
-      const [bmRes, subRes] = await Promise.all([fetch('/api/bookmarks'), fetch('/api/subscription')]);
+      const [bmRes, sub] = await Promise.all([fetch('/api/bookmarks'), fetchSubscriptionApi()]);
       if (bmRes.ok) {
         const j = await bmRes.json();
         setBookmarks(j.bookmarks ?? []);
       }
-      if (subRes.ok) {
-        const j = await subRes.json();
+      if (sub) {
         setSubscription({
-          isPro: Boolean(j.isPro),
-          cancelAtPeriodEnd: Boolean(j.cancelAtPeriodEnd),
+          isPro: sub.isPro,
+          cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
         });
       }
     } finally {
@@ -59,12 +59,11 @@ export default function BookmarksPage() {
   }, [authLoading, loadBookmarks]);
 
   const refreshSubscription = useCallback(async () => {
-    const subRes = await fetch('/api/subscription');
-    if (subRes.ok) {
-      const j = await subRes.json();
+    const sub = await fetchSubscriptionApi();
+    if (sub) {
       setSubscription({
-        isPro: Boolean(j.isPro),
-        cancelAtPeriodEnd: Boolean(j.cancelAtPeriodEnd),
+        isPro: sub.isPro,
+        cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
       });
     }
   }, []);

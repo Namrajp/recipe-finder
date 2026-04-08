@@ -6,6 +6,7 @@ import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { useAuth } from '@/components/AuthProvider';
 import { AppNavWithBookmarksLink } from '@/components/AppNav';
+import { fetchSubscriptionApi } from '@/lib/subscription-client';
 import { IngredientInput } from '@/components/IngredientInput';
 import { RecipeCard } from '@/components/RecipeCard';
 import { RecipeModal } from '@/components/RecipeModal';
@@ -44,10 +45,10 @@ export default function Home() {
     }
     setDataReady(false);
     try {
-      const [bmRes, histRes, subRes] = await Promise.all([
+      const [bmRes, histRes, sub] = await Promise.all([
         fetch('/api/bookmarks'),
         fetch('/api/history'),
-        fetch('/api/subscription'),
+        fetchSubscriptionApi(),
       ]);
       if (bmRes.ok) {
         const j = await bmRes.json();
@@ -57,14 +58,8 @@ export default function Home() {
         const j = await histRes.json();
         setSearchHistory(j.history ?? []);
       }
-      if (subRes.ok) {
-        const j = await subRes.json();
-        setSubscription({
-          isPro: Boolean(j.isPro),
-          cancelAtPeriodEnd: Boolean(j.cancelAtPeriodEnd),
-          usedSearches: Number(j.usedSearches) || 0,
-          limit: Number(j.limit) || 3,
-        });
+      if (sub) {
+        setSubscription(sub);
       }
     } finally {
       setDataReady(true);
@@ -78,6 +73,8 @@ export default function Home() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (authLoading) return;
+
     const params = new URLSearchParams(window.location.search);
     const paid =
       params.get('checkout') === 'success' ||
@@ -85,22 +82,46 @@ export default function Home() {
       params.get('success') === '1' ||
       params.get('payment_status') === 'success' ||
       params.get('status') === 'success';
-    if (paid) {
-      window.history.replaceState({}, '', '/');
-      void loadUserData();
-      const retryMs = [2500, 8000] as const;
-      const timers = retryMs.map((ms) =>
-        window.setTimeout(() => {
-          void loadUserData();
-        }, ms)
-      );
-      return () => timers.forEach((id) => window.clearTimeout(id));
-    }
+
     if (params.get('auth') === 'error') {
       window.history.replaceState({}, '', '/');
     }
-    return undefined;
-  }, [loadUserData]);
+
+    if (!paid) return undefined;
+
+    if (!user) {
+      return undefined;
+    }
+
+    window.history.replaceState({}, '', '/');
+
+    let cancelled = false;
+    const pollAfterCheckout = async () => {
+      const scheduleMs = [0, 1500, 3500, 7000, 12000];
+      let prev = 0;
+      for (const target of scheduleMs) {
+        if (cancelled) return;
+        const delta = target - prev;
+        if (delta > 0) {
+          await new Promise((r) => setTimeout(r, delta));
+        }
+        prev = target;
+        const sub = await fetchSubscriptionApi();
+        if (sub) {
+          setSubscription(sub);
+          if (sub.isPro) break;
+        }
+      }
+      if (!cancelled) {
+        await loadUserData();
+      }
+    };
+    void pollAfterCheckout();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, user, loadUserData]);
 
   useEffect(() => {
     if (subscription && !subscription.isPro && generateImagesVal) {
@@ -109,15 +130,9 @@ export default function Home() {
   }, [subscription, generateImagesVal, setGenerateImagesVal]);
 
   const refreshSubscription = useCallback(async () => {
-    const subRes = await fetch('/api/subscription');
-    if (subRes.ok) {
-      const j = await subRes.json();
-      setSubscription({
-        isPro: Boolean(j.isPro),
-        cancelAtPeriodEnd: Boolean(j.cancelAtPeriodEnd),
-        usedSearches: Number(j.usedSearches) || 0,
-        limit: Number(j.limit) || 3,
-      });
+    const sub = await fetchSubscriptionApi();
+    if (sub) {
+      setSubscription(sub);
     }
   }, []);
 
@@ -273,11 +288,12 @@ export default function Home() {
     }
   };
 
-  const usageLabel =
+  const usageLabelFree =
     subscription &&
-    (subscription.isPro
-      ? t.proUnlimited
-      : t.usageFree.replace('{used}', String(subscription.usedSearches)).replace('{limit}', String(subscription.limit)));
+    !subscription.isPro &&
+    t.usageFree
+      .replace('{used}', String(subscription.usedSearches))
+      .replace('{limit}', String(subscription.limit));
 
   const imagesLocked = Boolean(subscription && !subscription.isPro);
 
@@ -381,8 +397,16 @@ export default function Home() {
               )}
             </button>
 
-            {user && subscription && usageLabel && (
-              <span className="text-sm text-gray-600 font-medium">{usageLabel}</span>
+            {user && subscription && subscription.isPro && (
+              <span
+                className="inline-flex items-center px-2.5 py-1 rounded-full text-sm font-semibold bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-sm ring-1 ring-amber-400/30"
+                aria-label={t.proUnlimited}
+              >
+                {t.proUnlimited}
+              </span>
+            )}
+            {user && subscription && usageLabelFree && (
+              <span className="text-sm text-gray-600 font-medium">{usageLabelFree}</span>
             )}
 
             {ingredients.length > 0 && (

@@ -26,11 +26,18 @@ export async function GET() {
   const polar = await fetchPolarProState(user.id);
   const limit = getFreeSearchLimit();
 
-  return NextResponse.json({
-    isPro: polar.isPro,
-    cancelAtPeriodEnd: polar.cancelAtPeriodEnd,
-    currentPeriodEnd: polar.currentPeriodEnd,
-    usedSearches,
-    limit,
-  });
+  return NextResponse.json(
+    {
+      isPro: polar.isPro,
+      cancelAtPeriodEnd: polar.cancelAtPeriodEnd,
+      currentPeriodEnd: polar.currentPeriodEnd,
+      usedSearches,
+      limit,
+    },
+    {
+      headers: {
+        'Cache-Control': 'private, no-store, max-age=0',
+      },
+    }
+  );
 }

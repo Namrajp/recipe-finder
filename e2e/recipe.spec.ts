@@ -121,6 +121,7 @@ test.describe('pro subscriber', () => {
   });
 
   test('shows Pro infinity and cancel control', async ({ page }) => {
+    await expect(page.getByLabel('Pro subscriber')).toBeVisible();
     await expect(page.getByText('Pro ∞')).toBeVisible();
     await expect(page.getByRole('button', { name: /Cancel at period end/i })).toBeVisible();
   });

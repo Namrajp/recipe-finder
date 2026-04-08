@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useAuth } from '@/components/AuthProvider';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
+import { ProBadge } from '@/components/ProBadge';
 import { useLanguage } from '@/i18n/LanguageContext';
 
 type AppNavProps = {
@@ -11,19 +12,17 @@ type AppNavProps = {
     cancelAtPeriodEnd?: boolean;
   } | null;
   onManageSubscription?: () => void;
+  /** When false, Pro badge is omitted (e.g. shown beside bookmarks on the home layout). */
+  showProBadge?: boolean;
 };
 
-export function AppNav({ subscription, onManageSubscription }: AppNavProps) {
+export function AppNav({ subscription, onManageSubscription, showProBadge = true }: AppNavProps) {
   const { t } = useLanguage();
   const { user, loading, signOut, openLoginModal } = useAuth();
 
   return (
     <div className="flex flex-wrap items-center justify-end gap-3 mb-6">
-      {subscription?.isPro && (
-        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-gradient-to-r from-amber-500 to-orange-500 text-white">
-          Pro
-        </span>
-      )}
+      {showProBadge && subscription?.isPro && <ProBadge />}
       {user ? (
         <>
           <span className="text-sm text-gray-600 truncate max-w-[200px]" title={user.email ?? undefined}>
@@ -76,6 +75,7 @@ export function AppNavWithBookmarksLink({
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
       <div className="flex flex-wrap items-center gap-3">
+        {subscription?.isPro && <ProBadge />}
         {!loading && user && bookmarkCount > 0 && (
           <Link
             href="/bookmarks"
@@ -88,7 +88,11 @@ export function AppNavWithBookmarksLink({
           </Link>
         )}
       </div>
-      <AppNav subscription={subscription} onManageSubscription={onManageSubscription} />
+      <AppNav
+        subscription={subscription}
+        onManageSubscription={onManageSubscription}
+        showProBadge={false}
+      />
     </div>
   );
 }
