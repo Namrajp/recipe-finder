@@ -20,6 +20,9 @@ type SubscriptionInfo = {
   limit: number;
 };
 
+const CHECKOUT_PENDING_KEY = 'checkout_pending_at';
+const CHECKOUT_PENDING_TTL_MS = 30 * 60 * 1000;
+
 export default function Home() {
   const { language, t } = useLanguage();
   const { user, loading: authLoading, openLoginModal } = useAuth();
@@ -76,24 +79,30 @@ export default function Home() {
     if (authLoading) return;
 
     const params = new URLSearchParams(window.location.search);
-    const paid =
+    const paidFromParams =
       params.get('checkout') === 'success' ||
       params.get('success') === 'true' ||
       params.get('success') === '1' ||
       params.get('payment_status') === 'success' ||
       params.get('status') === 'success';
+    const pendingCheckoutAt = Number(window.sessionStorage.getItem(CHECKOUT_PENDING_KEY) || 0);
+    const hasRecentCheckoutPending =
+      Number.isFinite(pendingCheckoutAt) && pendingCheckoutAt > 0 && Date.now() - pendingCheckoutAt < CHECKOUT_PENDING_TTL_MS;
+    const shouldPollCheckout = paidFromParams || hasRecentCheckoutPending;
 
     if (params.get('auth') === 'error') {
       window.history.replaceState({}, '', '/');
     }
 
-    if (!paid) return undefined;
+    if (!shouldPollCheckout) return undefined;
 
     if (!user) {
       return undefined;
     }
 
-    window.history.replaceState({}, '', '/');
+    if (paidFromParams) {
+      window.history.replaceState({}, '', '/');
+    }
 
     let cancelled = false;
     const pollAfterCheckout = async () => {
@@ -109,9 +118,13 @@ export default function Home() {
         const sub = await fetchSubscriptionApi();
         if (sub) {
           setSubscription(sub);
-          if (sub.isPro) break;
+          if (sub.isPro) {
+            window.sessionStorage.removeItem(CHECKOUT_PENDING_KEY);
+            break;
+          }
         }
       }
+      window.sessionStorage.removeItem(CHECKOUT_PENDING_KEY);
       if (!cancelled) {
         await loadUserData();
       }
@@ -213,11 +226,20 @@ export default function Home() {
       const res = await fetch('/api/checkout', { method: 'POST' });
       const j = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
       if (res.ok && j.url) {
+        if (typeof window !== 'undefined') {
+          window.sessionStorage.setItem(CHECKOUT_PENDING_KEY, String(Date.now()));
+        }
         window.location.href = j.url;
         return;
       }
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.removeItem(CHECKOUT_PENDING_KEY);
+      }
       setError(j.error || t.errors.checkoutFailed);
     } catch {
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.removeItem(CHECKOUT_PENDING_KEY);
+      }
       setError(t.errors.checkoutFailed);
     }
   }, [t.errors.checkoutFailed]);

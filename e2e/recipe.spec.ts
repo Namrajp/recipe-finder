@@ -127,6 +127,57 @@ test.describe('pro subscriber', () => {
   });
 });
 
+test.describe('post-checkout upgrade state', () => {
+  test('shows Pro and removes upgrade after returning home', async ({ page }) => {
+    await loginAsUser(page);
+    await page.addInitScript(() => {
+      window.sessionStorage.setItem('checkout_pending_at', String(Date.now()));
+    });
+
+    await page.route('**/api/bookmarks**', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({ status: 200, json: { bookmarks: [] } });
+        return;
+      }
+      await route.fulfill({ status: 200, json: { ok: true } });
+    });
+    await page.route('**/api/history**', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({ status: 200, json: { history: [] } });
+        return;
+      }
+      await route.fulfill({ status: 200, json: { history: [] } });
+    });
+
+    let subscriptionCallCount = 0;
+    await page.route('**/api/subscription', async (route) => {
+      subscriptionCallCount += 1;
+      const isPro = subscriptionCallCount >= 2;
+      await route.fulfill({
+        status: 200,
+        json: {
+          isPro,
+          cancelAtPeriodEnd: false,
+          usedSearches: isPro ? 3 : 3,
+          limit: 3,
+        },
+      });
+    });
+
+    await mockRecipesSuccess(page);
+    await page.goto('/');
+    await waitAuthReady(page);
+
+    await expect(page.getByLabel('Pro subscriber')).toBeVisible();
+    await expect(page.getByRole('button', { name: /Upgrade to Pro/i })).toHaveCount(0);
+
+    await page.locator('#ingredient-input').fill('tomato');
+    await page.locator('#ingredient-input').press('Enter');
+    await page.getByRole('button', { name: /Suggest Recipes/i }).click();
+    await expect(page.getByText('Tomato Soup')).toBeVisible();
+  });
+});
+
 test.describe('bookmarks page', () => {
   test('lists bookmarks and remove works', async ({ page }) => {
     await loginAsUser(page);

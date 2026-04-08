@@ -8,14 +8,23 @@ function normalizeCheckoutEnvUrl(raw: string): string {
 }
 
 /** Polar share / checkout link with customer query params (no API keys required). */
-function fallbackCheckoutUrl(raw: string, user: { id: string; email?: string | null }): string | null {
+function fallbackCheckoutUrl(
+  raw: string,
+  user: { id: string; email?: string | null },
+  opts: { successUrl: string; returnUrl: string }
+): string | null {
   const trimmed = normalizeCheckoutEnvUrl(raw);
   if (!trimmed) return null;
   try {
     const u = new URL(trimmed);
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    // Polar checkout-link params have changed over time; pass multiple aliases for compatibility.
     u.searchParams.set('external_customer_id', user.id);
+    u.searchParams.set('customer_external_id', user.id);
+    u.searchParams.set('external_id', user.id);
     if (user.email) u.searchParams.set('customer_email', user.email);
+    u.searchParams.set('success_url', opts.successUrl);
+    u.searchParams.set('return_url', opts.returnUrl);
     return u.toString();
   } catch {
     return null;
@@ -28,9 +37,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  const base = resolvePublicBaseUrl(request);
+  const successUrl = `${base}/checkout/success`;
+  const returnUrl = base;
+
   const staticCheckout = process.env.POLAR_CHECKOUT_URL;
   if (staticCheckout?.trim()) {
-    const url = fallbackCheckoutUrl(staticCheckout, user);
+    const url = fallbackCheckoutUrl(staticCheckout, user, { successUrl, returnUrl });
     if (url) {
       return NextResponse.json({ url });
     }
@@ -46,10 +59,6 @@ export async function POST(request: NextRequest) {
 
   const polar = getPolarClient();
   const productId = getPolarProductId();
-  const base = resolvePublicBaseUrl(request);
-  const successUrl = `${base}/?checkout=success`;
-  const returnUrl = base;
-
   if (!polar || !productId) {
     const missing: string[] = [];
     if (!process.env.POLAR_ACCESS_TOKEN?.trim()) missing.push('POLAR_ACCESS_TOKEN');
