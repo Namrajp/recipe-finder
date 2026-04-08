@@ -1,10 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { Recipe } from '@/types/recipe';
+import { getSessionUser } from '@/lib/auth/session';
+import { createServiceClient } from '@/lib/supabase/service';
+import { buildRecipeCacheKey } from '@/lib/recipe-cache-key';
 import { generateImageHash, imageExists, saveImage } from '@/lib/storage';
+import { FREE_SEARCH_LIMIT } from '@/lib/polar';
+import { fetchPolarProState } from '@/lib/subscription-state';
+
+const CACHE_MS = 24 * 60 * 60 * 1000;
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 async function generateRecipeImage(
-  openai: OpenAI,
+  client: OpenAI,
   title: string,
   description: string
 ): Promise<string | undefined> {
@@ -18,7 +29,7 @@ async function generateRecipeImage(
   try {
     const prompt = `A professional food photography shot of ${title}. ${description || ''}. Appetizing, well-lit, on a clean plate with elegant presentation. Top-down or 45-degree angle view. High quality, restaurant style.`;
 
-    const response = await openai.images.generate({
+    const response = await client.images.generate({
       model: 'dall-e-3',
       prompt,
       n: 1,
@@ -41,10 +52,6 @@ async function generateRecipeImage(
   return undefined;
 }
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 const recipeSchema = {
   type: 'object' as const,
   properties: {
@@ -57,20 +64,20 @@ const recipeSchema = {
           title: { type: 'string' as const, description: 'Name of the recipe' },
           description: { type: 'string' as const, description: 'Brief description of the dish (1-2 sentences)' },
           cookTime: { type: 'string' as const, description: 'Total cooking time (e.g., "30 minutes", "1 hour")' },
-          difficulty: { 
-            type: 'string' as const, 
+          difficulty: {
+            type: 'string' as const,
             enum: ['Easy', 'Medium', 'Hard'],
-            description: 'Difficulty level of the recipe' 
+            description: 'Difficulty level of the recipe',
           },
-          ingredients: { 
-            type: 'array' as const, 
+          ingredients: {
+            type: 'array' as const,
             items: { type: 'string' as const },
-            description: 'List of ingredients with quantities' 
+            description: 'List of ingredients with quantities',
           },
-          instructions: { 
-            type: 'array' as const, 
+          instructions: {
+            type: 'array' as const,
             items: { type: 'string' as const },
-            description: 'Step-by-step cooking instructions' 
+            description: 'Step-by-step cooking instructions',
           },
         },
         required: ['id', 'title', 'description', 'cookTime', 'difficulty', 'ingredients', 'instructions'],
@@ -90,23 +97,67 @@ const languageInstructions: Record<string, string> = {
 };
 
 export async function POST(request: NextRequest) {
-  // #region agent log
-  fetch('http://127.0.0.1:7560/ingest/1b7ef0c3-5c65-4684-9d34-447f7bca3e41',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f9b595'},body:JSON.stringify({sessionId:'f9b595',location:'recipes/route.ts:POST-entry',message:'Recipes API called',data:{},timestamp:Date.now(),hypothesisId:'D'})}).catch(()=>{});
-  // #endregion
   try {
+    const user = await getSessionUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { ingredients, language = 'en', generateImages = false } = await request.json();
 
     if (!ingredients || !Array.isArray(ingredients) || ingredients.length === 0) {
-      return NextResponse.json(
-        { error: 'Please provide at least one ingredient' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Please provide at least one ingredient' }, { status: 400 });
+    }
+
+    let service;
+    try {
+      service = createServiceClient();
+    } catch {
+      return NextResponse.json({ error: 'Database not configured' }, { status: 503 });
+    }
+
+    const cacheKey = buildRecipeCacheKey(ingredients, language, Boolean(generateImages));
+
+    const { data: cacheRow, error: cacheReadError } = await service
+      .from('recipe_cache')
+      .select('recipes, created_at')
+      .eq('cache_key', cacheKey)
+      .maybeSingle();
+
+    if (!cacheReadError && cacheRow?.recipes) {
+      const created = cacheRow.created_at ? new Date(cacheRow.created_at).getTime() : 0;
+      if (created && Date.now() - created <= CACHE_MS) {
+        return NextResponse.json({
+          recipes: cacheRow.recipes as Recipe[],
+          cached: true,
+        });
+      }
+      await service.from('recipe_cache').delete().eq('cache_key', cacheKey);
     }
 
     if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 500 });
+    }
+
+    const polarState = await fetchPolarProState(user.id);
+
+    const { data: usageRow } = await service
+      .from('usage')
+      .select('recipe_search_count')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    const usedSearches = usageRow?.recipe_search_count ?? 0;
+
+    if (!polarState.isPro && usedSearches >= FREE_SEARCH_LIMIT) {
       return NextResponse.json(
-        { error: 'OpenAI API key not configured' },
-        { status: 500 }
+        {
+          error: 'Free search limit reached',
+          code: 'QUOTA_EXCEEDED',
+          limit: FREE_SEARCH_LIMIT,
+          used: usedSearches,
+        },
+        { status: 402 }
       );
     }
 
@@ -148,12 +199,9 @@ Rules:
     });
 
     const content = completion.choices[0]?.message?.content;
-    
+
     if (!content) {
-      return NextResponse.json(
-        { error: 'No response from AI' },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: 'No response from AI' }, { status: 500 });
     }
 
     const parsed = JSON.parse(content) as { recipes: Recipe[] };
@@ -167,19 +215,36 @@ Rules:
       recipes = await Promise.all(imagePromises);
     }
 
+    await service.from('recipe_cache').upsert(
+      {
+        cache_key: cacheKey,
+        language,
+        generate_images: Boolean(generateImages),
+        recipes,
+        created_at: new Date().toISOString(),
+      },
+      { onConflict: 'cache_key' }
+    );
+
+    if (!polarState.isPro) {
+      const { error: rpcError } = await service.rpc('increment_recipe_search_count', {
+        p_user_id: user.id,
+      });
+      if (rpcError) {
+        console.error('increment_recipe_search_count:', rpcError);
+      }
+    }
+
     return NextResponse.json({
       recipes,
       cached: false,
     });
   } catch (error) {
     console.error('Recipe API error:', error);
-    
+
     if (error instanceof OpenAI.APIError) {
       if (error.status === 401) {
-        return NextResponse.json(
-          { error: 'Invalid API key' },
-          { status: 401 }
-        );
+        return NextResponse.json({ error: 'Invalid API key' }, { status: 401 });
       }
       if (error.status === 429) {
         return NextResponse.json(
@@ -189,9 +254,6 @@ Rules:
       }
     }
 
-    return NextResponse.json(
-      { error: 'Failed to generate recipes. Please try again.' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to generate recipes. Please try again.' }, { status: 500 });
   }
 }

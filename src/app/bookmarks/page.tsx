@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { Recipe } from '@/types/recipe';
-import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { useLanguage } from '@/i18n/LanguageContext';
+import { useAuth } from '@/components/AuthProvider';
+import { AppNav } from '@/components/AppNav';
 import { RecipeModal } from '@/components/RecipeModal';
 
 const difficultyColors = {
@@ -13,74 +14,173 @@ const difficultyColors = {
   Hard: 'bg-red-100 text-red-800',
 };
 
+type SubscriptionInfo = {
+  isPro: boolean;
+  cancelAtPeriodEnd: boolean;
+};
+
 export default function BookmarksPage() {
   const { t } = useLanguage();
-  const [bookmarks, setBookmarks, isHydrated] = useLocalStorage<Recipe[]>('recipe-bookmarks', []);
+  const { user, loading: authLoading } = useAuth();
+  const [bookmarks, setBookmarks] = useState<Recipe[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
   const [generatingImages, setGeneratingImages] = useState<Set<string>>(new Set());
+  const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
 
-  const generateMissingImages = useCallback(async () => {
-    const recipesWithoutImages = bookmarks.filter(r => !r.imageUrl);
-    
-    for (const recipe of recipesWithoutImages) {
-      if (generatingImages.has(recipe.id)) continue;
-      
-      setGeneratingImages(prev => new Set(prev).add(recipe.id));
-      
-      try {
-        const response = await fetch('/api/generate-image', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: recipe.title, description: recipe.description }),
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          setBookmarks(prev => 
-            prev.map(r => r.id === recipe.id ? { ...r, imageUrl: data.imageUrl } : r)
-          );
-        }
-      } catch (error) {
-        console.error(`Failed to generate image for ${recipe.title}:`, error);
-      } finally {
-        setGeneratingImages(prev => {
-          const next = new Set(prev);
-          next.delete(recipe.id);
-          return next;
+  const loadBookmarks = useCallback(async () => {
+    if (!user) {
+      setBookmarks([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const [bmRes, subRes] = await Promise.all([fetch('/api/bookmarks'), fetch('/api/subscription')]);
+      if (bmRes.ok) {
+        const j = await bmRes.json();
+        setBookmarks(j.bookmarks ?? []);
+      }
+      if (subRes.ok) {
+        const j = await subRes.json();
+        setSubscription({
+          isPro: Boolean(j.isPro),
+          cancelAtPeriodEnd: Boolean(j.cancelAtPeriodEnd),
         });
       }
+    } finally {
+      setLoading(false);
     }
-  }, [bookmarks, generatingImages, setBookmarks]);
+  }, [user]);
 
   useEffect(() => {
-    if (isHydrated && bookmarks.some(r => !r.imageUrl)) {
-      generateMissingImages();
+    if (authLoading) return;
+    void loadBookmarks();
+  }, [authLoading, loadBookmarks]);
+
+  const refreshSubscription = useCallback(async () => {
+    const subRes = await fetch('/api/subscription');
+    if (subRes.ok) {
+      const j = await subRes.json();
+      setSubscription({
+        isPro: Boolean(j.isPro),
+        cancelAtPeriodEnd: Boolean(j.cancelAtPeriodEnd),
+      });
     }
-  }, [isHydrated]);
+  }, []);
 
-  const removeBookmark = useCallback((recipeId: string) => {
-    setBookmarks(prev => prev.filter(r => r.id !== recipeId));
-  }, [setBookmarks]);
+  const handleManageSubscription = useCallback(async () => {
+    if (!subscription?.isPro || subscription.cancelAtPeriodEnd) return;
+    const res = await fetch('/api/subscription/cancel', { method: 'POST' });
+    if (res.ok) {
+      await refreshSubscription();
+    }
+  }, [subscription, refreshSubscription]);
 
-  const clearAllBookmarks = useCallback(() => {
+  const bookmarksRef = useRef(bookmarks);
+  bookmarksRef.current = bookmarks;
+
+  useEffect(() => {
+    if (loading || !user) return;
+    const recipesWithoutImages = bookmarksRef.current.filter((r) => !r.imageUrl);
+    if (recipesWithoutImages.length === 0) return;
+
+    let cancelled = false;
+
+    void (async () => {
+      for (const recipe of recipesWithoutImages) {
+        if (cancelled) break;
+        setGeneratingImages((prev) => new Set(prev).add(recipe.id));
+        try {
+          const response = await fetch('/api/generate-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: recipe.title, description: recipe.description }),
+          });
+          if (response.ok) {
+            const data = await response.json();
+            const updated = { ...recipe, imageUrl: data.imageUrl as string };
+            setBookmarks((prev) => prev.map((r) => (r.id === recipe.id ? updated : r)));
+            await fetch('/api/bookmarks', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(updated),
+            });
+          }
+        } catch (error) {
+          console.error(`Failed to generate image for ${recipe.title}:`, error);
+        } finally {
+          setGeneratingImages((prev) => {
+            const next = new Set(prev);
+            next.delete(recipe.id);
+            return next;
+          });
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, user]);
+
+  const removeBookmark = useCallback(async (recipeId: string) => {
+    const res = await fetch(`/api/bookmarks?recipeId=${encodeURIComponent(recipeId)}`, {
+      method: 'DELETE',
+    });
+    if (res.ok) {
+      setBookmarks((prev) => prev.filter((r) => r.id !== recipeId));
+    }
+  }, []);
+
+  const clearAllBookmarks = useCallback(async () => {
+    const snapshot = [...bookmarks];
+    for (const r of snapshot) {
+      const res = await fetch(`/api/bookmarks?recipeId=${encodeURIComponent(r.id)}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        await loadBookmarks();
+        return;
+      }
+    }
     setBookmarks([]);
-  }, [setBookmarks]);
+  }, [bookmarks, loadBookmarks]);
 
-  const toggleBookmark = useCallback((recipe: Recipe) => {
-    removeBookmark(recipe.id);
-  }, [removeBookmark]);
+  const toggleBookmark = useCallback(
+    async (recipe: Recipe) => {
+      await removeBookmark(recipe.id);
+    },
+    [removeBookmark]
+  );
 
-  if (!isHydrated) {
+  if (authLoading || loading) {
     return (
       <main className="min-h-screen bg-gray-50">
         <div className="max-w-6xl mx-auto px-4 py-12">
           <div className="animate-pulse">
-            <div className="h-8 bg-gray-200 rounded w-48 mb-8"></div>
+            <div className="h-8 bg-gray-200 rounded w-48 mb-8" />
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {[1, 2, 3].map(i => (
-                <div key={i} className="bg-white rounded-2xl h-80"></div>
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="bg-white rounded-2xl h-80" />
               ))}
             </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (!user) {
+    return (
+      <main className="min-h-screen bg-gray-50">
+        <div className="max-w-6xl mx-auto px-4 py-12">
+          <AppNav />
+          <div className="text-center py-16">
+            <p className="text-gray-600 mb-4">{t.authRequired}</p>
+            <Link href="/" className="text-orange-600 font-medium hover:underline">
+              {t.backToHome}
+            </Link>
           </div>
         </div>
       </main>
@@ -90,6 +190,10 @@ export default function BookmarksPage() {
   return (
     <main className="min-h-screen bg-gray-50">
       <div className="max-w-6xl mx-auto px-4 py-12">
+        <div className="flex justify-end mb-6">
+          <AppNav subscription={subscription ?? undefined} onManageSubscription={() => void handleManageSubscription()} />
+        </div>
+
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
             <Link
@@ -108,14 +212,20 @@ export default function BookmarksPage() {
               </p>
             </div>
           </div>
-          
+
           {bookmarks.length > 0 && (
             <button
-              onClick={clearAllBookmarks}
+              type="button"
+              onClick={() => void clearAllBookmarks()}
               className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                />
               </svg>
               {t.clearAllBookmarks}
             </button>
@@ -126,7 +236,12 @@ export default function BookmarksPage() {
           <div className="text-center py-16">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mb-4">
               <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
+                />
               </svg>
             </div>
             <h2 className="text-xl font-semibold text-gray-900 mb-2">{t.noBookmarks}</h2>
@@ -146,7 +261,8 @@ export default function BookmarksPage() {
                 className="group relative bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-lg transition-all duration-200"
               >
                 <button
-                  onClick={() => removeBookmark(recipe.id)}
+                  type="button"
+                  onClick={() => void removeBookmark(recipe.id)}
                   className="absolute top-3 right-3 z-10 p-2 rounded-full bg-white/90 text-gray-400 hover:bg-red-50 hover:text-red-500 shadow-sm transition-colors"
                   aria-label={t.removeBookmark}
                 >
@@ -155,10 +271,7 @@ export default function BookmarksPage() {
                   </svg>
                 </button>
 
-                <div 
-                  className="cursor-pointer"
-                  onClick={() => setSelectedRecipe(recipe)}
-                >
+                <div className="cursor-pointer" onClick={() => setSelectedRecipe(recipe)} role="presentation">
                   {recipe.imageUrl ? (
                     <div className="aspect-[4/3] overflow-hidden">
                       <img
@@ -173,13 +286,22 @@ export default function BookmarksPage() {
                         <div className="text-center">
                           <svg className="animate-spin w-8 h-8 text-orange-400 mx-auto mb-2" fill="none" viewBox="0 0 24 24">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                            <path
+                              className="opacity-75"
+                              fill="currentColor"
+                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                            />
                           </svg>
                           <span className="text-sm text-orange-500">{t.generatingImage}</span>
                         </div>
                       ) : (
                         <svg className="w-16 h-16 text-orange-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={1.5}
+                            d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                          />
                         </svg>
                       )}
                     </div>
@@ -187,7 +309,9 @@ export default function BookmarksPage() {
 
                   <div className="p-5">
                     <div className="flex items-center gap-2 mb-2">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${difficultyColors[recipe.difficulty]}`}>
+                      <span
+                        className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${difficultyColors[recipe.difficulty]}`}
+                      >
                         {t.difficulty[recipe.difficulty]}
                       </span>
                       <span className="text-xs text-gray-500 flex items-center gap-1">
@@ -202,9 +326,7 @@ export default function BookmarksPage() {
                       {recipe.title}
                     </h3>
 
-                    <p className="text-gray-600 text-sm line-clamp-2">
-                      {recipe.description}
-                    </p>
+                    <p className="text-gray-600 text-sm line-clamp-2">{recipe.description}</p>
                   </div>
                 </div>
               </article>
@@ -215,9 +337,9 @@ export default function BookmarksPage() {
 
       <RecipeModal
         recipe={selectedRecipe}
-        isBookmarked={true}
+        isBookmarked
         onClose={() => setSelectedRecipe(null)}
-        onToggleBookmark={toggleBookmark}
+        onToggleBookmark={(r) => void toggleBookmark(r)}
       />
     </main>
   );

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { getSessionUser } from '@/lib/auth/session';
 import { generateImageHash, imageExists, saveImage } from '@/lib/storage';
 
 const openai = new OpenAI({
@@ -8,6 +9,11 @@ const openai = new OpenAI({
 
 export async function POST(request: NextRequest) {
   try {
+    const user = await getSessionUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { title, description } = await request.json();
 
     if (!title) {
