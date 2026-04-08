@@ -10,7 +10,13 @@ import {
   type ReactNode,
 } from 'react';
 import type { User } from '@supabase/supabase-js';
+import { useLanguage } from '@/i18n/LanguageContext';
 import { createClient, isSupabaseBrowserConfigured } from '@/lib/supabase/client';
+import {
+  messageForSupabaseOAuthError,
+  readSupabaseOAuthErrorFromUrl,
+  shouldForwardAuthCodeFromRoot,
+} from '@/lib/supabase/oauth-return';
 import { LoginModal } from '@/components/LoginModal';
 
 type AuthContextValue = {
@@ -33,10 +39,30 @@ function readE2EUser(): User | null {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const { t } = useLanguage();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [e2eUser, setE2eUser] = useState(false);
   const [loginModalOpen, setLoginModalOpen] = useState(false);
+  const [authUrlError, setAuthUrlError] = useState<string | null>(null);
+
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (process.env.NEXT_PUBLIC_E2E_TEST === '1') return;
+
+    const url = new URL(window.location.href);
+    if (shouldForwardAuthCodeFromRoot(url)) {
+      window.location.replace(`/auth/callback${url.search}`);
+      return;
+    }
+
+    const oauthErr = readSupabaseOAuthErrorFromUrl(url);
+    if (oauthErr) {
+      window.history.replaceState(null, '', url.pathname || '/');
+      setAuthUrlError(messageForSupabaseOAuthError(oauthErr, t));
+      setLoginModalOpen(true);
+    }
+  }, [t]);
 
   useLayoutEffect(() => {
     const e2e = readE2EUser();
@@ -119,7 +145,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider value={value}>
       <span data-auth-ready={!loading ? 'true' : 'false'} className="hidden" aria-hidden />
       {children}
-      <LoginModal open={loginModalOpen} onClose={() => setLoginModalOpen(false)} />
+      <LoginModal
+        open={loginModalOpen}
+        onClose={() => {
+          setAuthUrlError(null);
+          setLoginModalOpen(false);
+        }}
+        urlAuthError={authUrlError}
+        onClearUrlAuthError={() => setAuthUrlError(null)}
+      />
     </AuthContext.Provider>
   );
 }

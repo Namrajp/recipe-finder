@@ -20,6 +20,8 @@ export default defineConfig({
       ...process.env,
       E2E_TEST: '1',
       NEXT_PUBLIC_E2E_TEST: '1',
+      // Override .env.local so /auth/callback tests stay on this host (not production URL).
+      NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
     },
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],

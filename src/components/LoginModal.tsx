@@ -1,26 +1,35 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
+import { getAuthRedirectOrigin } from '@/lib/app-url';
 import { createClient, isSupabaseBrowserConfigured } from '@/lib/supabase/client';
 import { useLanguage } from '@/i18n/LanguageContext';
 
 type LoginModalProps = {
   open: boolean;
   onClose: () => void;
+  /** Set when Supabase redirects with ?error= / otp_expired on the home URL */
+  urlAuthError?: string | null;
+  onClearUrlAuthError?: () => void;
 };
 
-export function LoginModal({ open, onClose }: LoginModalProps) {
+export function LoginModal({ open, onClose, urlAuthError, onClearUrlAuthError }: LoginModalProps) {
   const { t } = useLanguage();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (urlAuthError) setSent(false);
+  }, [urlAuthError]);
+
   if (!open) return null;
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
+    onClearUrlAuthError?.();
     setLoading(true);
     try {
       if (process.env.NEXT_PUBLIC_E2E_TEST === '1') {
@@ -32,7 +41,7 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
         return;
       }
       const supabase = createClient();
-      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      const origin = getAuthRedirectOrigin();
       const { error: signError } = await supabase.auth.signInWithOtp({
         email: email.trim(),
         options: {
@@ -84,6 +93,11 @@ export function LoginModal({ open, onClose }: LoginModalProps) {
           <p className="text-gray-600 text-sm">{t.checkEmail}</p>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
+            {urlAuthError ? (
+              <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+                {urlAuthError}
+              </p>
+            ) : null}
             <div>
               <label htmlFor="login-email" className="block text-sm font-medium text-gray-700 mb-1">
                 {t.emailLabel}

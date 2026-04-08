@@ -1,19 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { getSessionUser } from '@/lib/auth/session';
+import { resolvePublicBaseUrl } from '@/lib/app-url';
 import { getPolarClient, getPolarProductId } from '@/lib/polar';
-
-function resolvePublicBaseUrl(request: NextRequest): string {
-  const fromEnv = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, '');
-  if (fromEnv) return fromEnv;
-
-  const host = request.headers.get('x-forwarded-host') || request.headers.get('host');
-  if (!host) return 'http://localhost:3000';
-
-  const forwardedProto = request.headers.get('x-forwarded-proto');
-  const isLocal = host.startsWith('localhost') || host.startsWith('127.0.0.1');
-  const proto = forwardedProto || (isLocal ? 'http' : 'https');
-  return `${proto}://${host}`;
-}
 
 /** Optional: Polar dashboard checkout link when API credentials are not used. */
 function fallbackCheckoutUrl(raw: string, user: { id: string; email?: string | null }): string | null {

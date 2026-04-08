@@ -31,6 +31,9 @@ export const translations = {
       checkoutFailed: 'Could not start checkout. Check billing settings (Polar) and try again.',
       authNotConfigured:
         'Sign-in is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY on the server.',
+      magicLinkExpired:
+        'This sign-in link expired or was already used. Request a new magic link from this same browser. Some email apps open links in the background first (link scanners), which burns the link—try “Open in browser”, turning off link tracking, or signing in from an incognito/private window.',
+      magicLinkFailed: 'Email sign-in failed. Request a new magic link and try again.',
     },
     language: 'Language',
     generateImages: 'Generate images for recipes',
@@ -93,6 +96,9 @@ export const translations = {
       checkoutFailed: 'चेकआउट सुरु गर्न सकिएन। बिलिङ (Polar) जाँच गर्नुहोस्।',
       authNotConfigured:
         'साइन-इन कन्फिगर गरिएको छैन। सर्भरमा NEXT_PUBLIC_SUPABASE_URL र NEXT_PUBLIC_SUPABASE_ANON_KEY सेट गर्नुहोस्।',
+      magicLinkExpired:
+        'यो साइन-इन लिङ्क म्याद सकियो वा पहिले नै प्रयोग भयो। यही ब्राउजरबाट नयाँ जादु लिङ्क माग्नुहोस्। केही इमेल एपले पृष्ठभूमिमा लिङ्क खोल्छन्—“ब्राउजरमा खोल्नुहोस्” वा निजी/इन्कग्निटो प्रयास गर्नुहोस्।',
+      magicLinkFailed: 'इमेल साइन-इन असफल। नयाँ जादु लिङ्क माग्नुहोस्।',
     },
     language: 'भाषा',
     generateImages: 'रेसिपीहरूको लागि तस्बिरहरू बनाउनुहोस्',
