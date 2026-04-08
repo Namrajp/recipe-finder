@@ -13,4 +13,10 @@ export function getPolarClient(): Polar | null {
   return new Polar({ accessToken: token, ...(server ? { server } : {}) });
 }
 
-export const FREE_SEARCH_LIMIT = 3;
+/** Free recipe generations (non-cached) per billing period for non‑Pro users. Override with FREE_SEARCH_LIMIT. */
+export function getFreeSearchLimit(): number {
+  const raw = process.env.FREE_SEARCH_LIMIT?.trim();
+  if (!raw) return 3;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 1 ? Math.min(n, 1000) : 3;
+}

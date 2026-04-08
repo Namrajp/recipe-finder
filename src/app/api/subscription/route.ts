@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSessionUser } from '@/lib/auth/session';
 import { createServiceClient } from '@/lib/supabase/service';
-import { FREE_SEARCH_LIMIT } from '@/lib/polar';
+import { getFreeSearchLimit } from '@/lib/polar';
 import { fetchPolarProState } from '@/lib/subscription-state';
 
 export async function GET() {
@@ -24,12 +24,13 @@ export async function GET() {
   }
 
   const polar = await fetchPolarProState(user.id);
+  const limit = getFreeSearchLimit();
 
   return NextResponse.json({
     isPro: polar.isPro,
     cancelAtPeriodEnd: polar.cancelAtPeriodEnd,
     currentPeriodEnd: polar.currentPeriodEnd,
     usedSearches,
-    limit: FREE_SEARCH_LIMIT,
+    limit,
   });
 }

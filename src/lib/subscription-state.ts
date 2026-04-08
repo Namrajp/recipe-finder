@@ -7,10 +7,17 @@ export type PolarProState = {
   subscriptionId: string | null;
 };
 
+function periodEndToIso(value: unknown): string | null {
+  if (value == null) return null;
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'string') return value;
+  const maybe = value as { toISOString?: () => string };
+  return typeof maybe.toISOString === 'function' ? maybe.toISOString() ?? null : null;
+}
+
 export async function fetchPolarProState(externalId: string): Promise<PolarProState> {
   const polar = getPolarClient();
-  const productId = getPolarProductId();
-  if (!polar || !productId) {
+  if (!polar) {
     return {
       isPro: false,
       cancelAtPeriodEnd: false,
@@ -18,6 +25,8 @@ export async function fetchPolarProState(externalId: string): Promise<PolarProSt
       subscriptionId: null,
     };
   }
+
+  const productId = getPolarProductId();
 
   try {
     const state = await polar.customers.getStateExternal({ externalId });
@@ -29,10 +38,10 @@ export async function fetchPolarProState(externalId: string): Promise<PolarProSt
         subscriptionId: null,
       };
     }
-    const match = state.activeSubscriptions.filter(
-      (s) =>
-        s.productId === productId && (s.status === 'active' || s.status === 'trialing')
+    const active = state.activeSubscriptions.filter(
+      (s) => s.status === 'active' || s.status === 'trialing'
     );
+    const match = productId ? active.filter((s) => s.productId === productId) : active;
     const sub = match[0];
     if (!sub) {
       return {
@@ -44,8 +53,8 @@ export async function fetchPolarProState(externalId: string): Promise<PolarProSt
     }
     return {
       isPro: true,
-      cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
-      currentPeriodEnd: sub.currentPeriodEnd?.toISOString?.() ?? null,
+      cancelAtPeriodEnd: Boolean(sub.cancelAtPeriodEnd),
+      currentPeriodEnd: periodEndToIso(sub.currentPeriodEnd),
       subscriptionId: sub.id,
     };
   } catch {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { getSessionUser } from '@/lib/auth/session';
 import { generateImageHash, imageExists, saveImage } from '@/lib/storage';
+import { fetchPolarProState } from '@/lib/subscription-state';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -27,6 +28,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'OpenAI API key not configured' },
         { status: 500 }
+      );
+    }
+
+    const polarState = await fetchPolarProState(user.id);
+    if (!polarState.isPro) {
+      return NextResponse.json(
+        { error: 'Recipe images are included with Pro.', code: 'IMAGES_PRO_REQUIRED' },
+        { status: 402 }
       );
     }
 

@@ -5,7 +5,7 @@ import { getSessionUser } from '@/lib/auth/session';
 import { createServiceClient } from '@/lib/supabase/service';
 import { buildRecipeCacheKey } from '@/lib/recipe-cache-key';
 import { generateImageHash, imageExists, saveImage } from '@/lib/storage';
-import { FREE_SEARCH_LIMIT } from '@/lib/polar';
+import { getFreeSearchLimit } from '@/lib/polar';
 import { fetchPolarProState } from '@/lib/subscription-state';
 
 const CACHE_MS = 24 * 60 * 60 * 1000;
@@ -148,14 +148,25 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     const usedSearches = usageRow?.recipe_search_count ?? 0;
+    const freeLimit = getFreeSearchLimit();
 
-    if (!polarState.isPro && usedSearches >= FREE_SEARCH_LIMIT) {
+    if (!polarState.isPro && usedSearches >= freeLimit) {
       return NextResponse.json(
         {
           error: 'Free search limit reached',
           code: 'QUOTA_EXCEEDED',
-          limit: FREE_SEARCH_LIMIT,
+          limit: freeLimit,
           used: usedSearches,
+        },
+        { status: 402 }
+      );
+    }
+
+    if (generateImages && !polarState.isPro) {
+      return NextResponse.json(
+        {
+          error: 'Recipe images are included with Pro. Upgrade to generate images.',
+          code: 'IMAGES_PRO_REQUIRED',
         },
         { status: 402 }
       );

@@ -33,7 +33,6 @@ export default function Home() {
   const [dataReady, setDataReady] = useState(false);
   const [generateImagesVal, setGenerateImagesVal] = useLocalStorage<boolean>('generate-images', false);
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
-  const [quotaBlocked, setQuotaBlocked] = useState(false);
 
   const loadUserData = useCallback(async () => {
     if (!user) {
@@ -87,13 +86,27 @@ export default function Home() {
       params.get('payment_status') === 'success' ||
       params.get('status') === 'success';
     if (paid) {
-      void loadUserData();
       window.history.replaceState({}, '', '/');
+      void loadUserData();
+      const retryMs = [2500, 8000] as const;
+      const timers = retryMs.map((ms) =>
+        window.setTimeout(() => {
+          void loadUserData();
+        }, ms)
+      );
+      return () => timers.forEach((id) => window.clearTimeout(id));
     }
     if (params.get('auth') === 'error') {
       window.history.replaceState({}, '', '/');
     }
+    return undefined;
   }, [loadUserData]);
+
+  useEffect(() => {
+    if (subscription && !subscription.isPro && generateImagesVal) {
+      setGenerateImagesVal(false);
+    }
+  }, [subscription, generateImagesVal, setGenerateImagesVal]);
 
   const refreshSubscription = useCallback(async () => {
     const subRes = await fetch('/api/subscription');
@@ -215,7 +228,6 @@ export default function Home() {
 
     setIsLoading(true);
     setError(null);
-    setQuotaBlocked(false);
     setWasFromCache(false);
 
     try {
@@ -232,8 +244,14 @@ export default function Home() {
       const data = await response.json();
 
       if (response.status === 402 && data.code === 'QUOTA_EXCEEDED') {
-        setQuotaBlocked(true);
         setError(data.error || t.quotaExceededTitle);
+        setRecipes([]);
+        await refreshSubscription();
+        return;
+      }
+
+      if (response.status === 402 && data.code === 'IMAGES_PRO_REQUIRED') {
+        setError(data.error || t.imagesProRequired);
         setRecipes([]);
         await refreshSubscription();
         return;
@@ -261,11 +279,13 @@ export default function Home() {
       ? t.proUnlimited
       : t.usageFree.replace('{used}', String(subscription.usedSearches)).replace('{limit}', String(subscription.limit)));
 
+  const imagesLocked = Boolean(subscription && !subscription.isPro);
+
   const showUpgrade =
     user &&
     subscription &&
     !subscription.isPro &&
-    (quotaBlocked || subscription.usedSearches >= subscription.limit);
+    subscription.usedSearches >= subscription.limit;
 
   return (
     <main className="min-h-screen">
@@ -299,17 +319,22 @@ export default function Home() {
             disabled={isLoading}
           />
 
-          <div className="flex items-center gap-3 mt-6">
-            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-6">
+            <label
+              className={`inline-flex items-center gap-2 select-none ${
+                imagesLocked ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'
+              }`}
+            >
               <input
                 type="checkbox"
-                checked={generateImagesVal}
+                checked={!imagesLocked && generateImagesVal}
                 onChange={(e) => setGenerateImagesVal(e.target.checked)}
-                disabled={isLoading}
+                disabled={isLoading || imagesLocked}
                 className="w-5 h-5 rounded border-gray-300 text-orange-500 focus:ring-orange-500 focus:ring-2 disabled:opacity-50"
               />
               <span className="text-sm text-gray-700">{t.generateImages}</span>
             </label>
+            {imagesLocked && <span className="text-xs text-gray-500">{t.imagesProHint}</span>}
           </div>
 
           {showUpgrade && (
