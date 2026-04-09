@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSessionUser } from '@/lib/auth/session';
 import { getPolarClient } from '@/lib/polar';
-import { fetchPolarProState } from '@/lib/subscription-state';
+import { fetchPolarProStateForUser } from '@/lib/subscription-state';
 
 export async function POST() {
   const user = await getSessionUser();
@@ -14,7 +14,7 @@ export async function POST() {
     return NextResponse.json({ error: 'Billing not configured' }, { status: 503 });
   }
 
-  const state = await fetchPolarProState(user.id);
+  const state = await fetchPolarProStateForUser({ id: user.id, email: user.email });
   if (!state.isPro || !state.subscriptionId) {
     return NextResponse.json({ error: 'No active subscription' }, { status: 400 });
   }

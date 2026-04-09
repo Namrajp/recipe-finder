@@ -6,6 +6,8 @@ import { resolvePublicOrigin } from '@/lib/app-url';
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const siteOrigin = resolvePublicOrigin(request);
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
   const code = url.searchParams.get('code');
   let next = url.searchParams.get('next') ?? '/';
   if (!next.startsWith('/') || next.startsWith('//')) {
@@ -15,12 +17,16 @@ export async function GET(request: Request) {
   const successRedirect = new URL(next, siteOrigin).toString();
 
   if (code) {
+    if (!supabaseUrl || !supabaseKey) {
+      return NextResponse.redirect(new URL('/?auth=error', siteOrigin));
+    }
+
     const cookieStore = await cookies();
     const redirectResponse = NextResponse.redirect(successRedirect);
 
     const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      supabaseUrl,
+      supabaseKey,
       {
         cookies: {
           getAll() {

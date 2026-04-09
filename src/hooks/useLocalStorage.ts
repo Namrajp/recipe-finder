@@ -7,6 +7,7 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
   const [isHydrated, setIsHydrated] = useState(false);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
     try {
       const item = window.localStorage.getItem(key);
       if (item) {
@@ -19,14 +20,17 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
   }, [key]);
 
   const setValue = useCallback((value: T | ((val: T) => T)) => {
+    if (typeof window === 'undefined') return;
     try {
-      const valueToStore = value instanceof Function ? value(storedValue) : value;
-      setStoredValue(valueToStore);
-      window.localStorage.setItem(key, JSON.stringify(valueToStore));
+      setStoredValue((currentValue) => {
+        const valueToStore = value instanceof Function ? value(currentValue) : value;
+        window.localStorage.setItem(key, JSON.stringify(valueToStore));
+        return valueToStore;
+      });
     } catch (error) {
       console.warn(`Error setting localStorage key "${key}":`, error);
     }
-  }, [key, storedValue]);
+  }, [key]);
 
   return [storedValue, setValue, isHydrated] as const;
 }

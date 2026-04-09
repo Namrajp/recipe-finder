@@ -32,6 +32,7 @@ export default function BookmarksPage() {
   const loadBookmarks = useCallback(async () => {
     if (!user) {
       setBookmarks([]);
+      setSubscription(null);
       setLoading(false);
       return;
     }
@@ -42,12 +43,14 @@ export default function BookmarksPage() {
         const j = await bmRes.json();
         setBookmarks(j.bookmarks ?? []);
       }
-      if (sub) {
-        setSubscription({
-          isPro: sub.isPro,
-          cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
-        });
-      }
+      setSubscription(
+        sub
+          ? {
+              isPro: sub.isPro,
+              cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+            }
+          : null
+      );
     } finally {
       setLoading(false);
     }
@@ -80,7 +83,7 @@ export default function BookmarksPage() {
   bookmarksRef.current = bookmarks;
 
   useEffect(() => {
-    if (loading || !user) return;
+    if (loading || !user || !subscription?.isPro) return;
     const recipesWithoutImages = bookmarksRef.current.filter((r) => !r.imageUrl);
     if (recipesWithoutImages.length === 0) return;
 
@@ -121,7 +124,7 @@ export default function BookmarksPage() {
     return () => {
       cancelled = true;
     };
-  }, [loading, user]);
+  }, [loading, subscription?.isPro, user]);
 
   const removeBookmark = useCallback(async (recipeId: string) => {
     const res = await fetch(`/api/bookmarks?recipeId=${encodeURIComponent(recipeId)}`, {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { getSessionUser } from '@/lib/auth/session';
 import { generateImageHash, imageExists, saveImage } from '@/lib/storage';
-import { fetchPolarProState } from '@/lib/subscription-state';
+import { fetchPolarProStateForUser } from '@/lib/subscription-state';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const polarState = await fetchPolarProState(user.id);
+    const polarState = await fetchPolarProStateForUser({ id: user.id, email: user.email });
     if (!polarState.isPro) {
       return NextResponse.json(
         { error: 'Recipe images are included with Pro.', code: 'IMAGES_PRO_REQUIRED' },

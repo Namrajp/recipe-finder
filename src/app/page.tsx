@@ -61,9 +61,7 @@ export default function Home() {
         const j = await histRes.json();
         setSearchHistory(j.history ?? []);
       }
-      if (sub) {
-        setSubscription(sub);
-      }
+      setSubscription(sub);
     } finally {
       setDataReady(true);
     }
