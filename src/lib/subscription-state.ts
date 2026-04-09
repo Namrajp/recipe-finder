@@ -5,6 +5,7 @@ export type PolarProState = {
   cancelAtPeriodEnd: boolean;
   currentPeriodEnd: string | null;
   subscriptionId: string | null;
+  resolvedBy: 'external_id' | 'email' | 'none';
 };
 
 function periodEndToIso(value: unknown): string | null {
@@ -23,6 +24,7 @@ export async function fetchPolarProState(externalId: string): Promise<PolarProSt
       cancelAtPeriodEnd: false,
       currentPeriodEnd: null,
       subscriptionId: null,
+      resolvedBy: 'none',
     };
   }
 
@@ -32,6 +34,7 @@ export async function fetchPolarProState(externalId: string): Promise<PolarProSt
     cancelAtPeriodEnd: false,
     currentPeriodEnd: null,
     subscriptionId: null,
+    resolvedBy: 'none',
   };
 
   const toProState = (state: {
@@ -57,6 +60,7 @@ export async function fetchPolarProState(externalId: string): Promise<PolarProSt
       cancelAtPeriodEnd: Boolean(matched.cancelAtPeriodEnd),
       currentPeriodEnd: periodEndToIso(matched.currentPeriodEnd),
       subscriptionId: matched.id,
+      resolvedBy: 'external_id',
     };
   };
 
@@ -107,6 +111,7 @@ export async function fetchPolarProStateForUser(user: {
       cancelAtPeriodEnd: Boolean(matched.cancelAtPeriodEnd),
       currentPeriodEnd: periodEndToIso(matched.currentPeriodEnd),
       subscriptionId: matched.id,
+      resolvedBy: 'email',
     };
   } catch {
     return byExternal;

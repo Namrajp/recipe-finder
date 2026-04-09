@@ -40,3 +40,4 @@ next-env.d.ts
 
 # Generated recipe images (cached)
 public/recipe-images/*.png
+.vercel

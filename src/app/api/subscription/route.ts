@@ -33,6 +33,7 @@ export async function GET() {
       currentPeriodEnd: polar.currentPeriodEnd,
       usedSearches,
       limit,
+      resolvedBy: polar.resolvedBy,
     },
     {
       headers: {

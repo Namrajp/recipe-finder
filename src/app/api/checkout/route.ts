@@ -41,6 +41,34 @@ export async function POST(request: NextRequest) {
   const successUrl = `${base}/checkout/success`;
   const returnUrl = base;
 
+  const polar = getPolarClient();
+  const productId = getPolarProductId();
+  // Prefer API checkout when configured, since this reliably links customer identity.
+  if (polar && productId) {
+    try {
+      let existingCustomerId: string | undefined;
+      if (user.email) {
+        const list = await polar.customers.list({ email: user.email, limit: 1 });
+        const firstPage = await list.next();
+        const existing = firstPage?.result.items[0];
+        if (existing?.id) existingCustomerId = existing.id;
+      }
+
+      const checkout = await polar.checkouts.create({
+        products: [productId],
+        customerId: existingCustomerId,
+        externalCustomerId: user.id,
+        customerEmail: user.email ?? undefined,
+        successUrl,
+        returnUrl,
+      });
+
+      return NextResponse.json({ url: checkout.url });
+    } catch (e) {
+      console.error('Polar checkout API path:', e);
+    }
+  }
+
   const staticCheckout = process.env.POLAR_CHECKOUT_URL;
   if (staticCheckout?.trim()) {
     const url = fallbackCheckoutUrl(staticCheckout, user, { successUrl, returnUrl });
@@ -57,35 +85,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const polar = getPolarClient();
-  const productId = getPolarProductId();
-  if (!polar || !productId) {
-    const missing: string[] = [];
-    if (!process.env.POLAR_ACCESS_TOKEN?.trim()) missing.push('POLAR_ACCESS_TOKEN');
-    if (!productId) missing.push('POLAR_PRODUCT_ID');
-    return NextResponse.json(
-      {
-        error:
-          'Billing not configured. Either set POLAR_CHECKOUT_URL (Polar share link — no API keys) or POLAR_ACCESS_TOKEN + POLAR_PRODUCT_ID (Polar → Settings → API / Products). For sandbox API, set POLAR_SERVER=sandbox.',
-        code: 'BILLING_NOT_CONFIGURED',
-        missing,
-      },
-      { status: 503 }
-    );
-  }
-
-  try {
-    const checkout = await polar.checkouts.create({
-      products: [productId],
-      externalCustomerId: user.id,
-      customerEmail: user.email ?? undefined,
-      successUrl,
-      returnUrl,
-    });
-
-    return NextResponse.json({ url: checkout.url });
-  } catch (e) {
-    console.error('Polar checkout:', e);
-    return NextResponse.json({ error: 'Failed to create checkout' }, { status: 500 });
-  }
+  const missing: string[] = [];
+  if (!process.env.POLAR_ACCESS_TOKEN?.trim()) missing.push('POLAR_ACCESS_TOKEN');
+  if (!productId) missing.push('POLAR_PRODUCT_ID');
+  return NextResponse.json(
+    {
+      error:
+        'Billing not configured. Set POLAR_ACCESS_TOKEN + POLAR_PRODUCT_ID for reliable customer linking (recommended), or set POLAR_CHECKOUT_URL as fallback.',
+      code: 'BILLING_NOT_CONFIGURED',
+      missing,
+    },
+    { status: 503 }
+  );
 }
