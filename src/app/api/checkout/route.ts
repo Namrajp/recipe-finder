@@ -43,6 +43,7 @@ export async function POST(request: NextRequest) {
 
   const polar = getPolarClient();
   const productId = getPolarProductId();
+  let apiCheckoutError: string | null = null;
   // Prefer API checkout when configured, since this reliably links customer identity.
   if (polar && productId) {
     try {
@@ -54,18 +55,27 @@ export async function POST(request: NextRequest) {
         if (existing?.id) existingCustomerId = existing.id;
       }
 
-      const checkout = await polar.checkouts.create({
-        products: [productId],
-        customerId: existingCustomerId,
-        externalCustomerId: user.id,
-        customerEmail: user.email ?? undefined,
-        successUrl,
-        returnUrl,
-      });
+      const checkoutPayload = existingCustomerId
+        ? {
+            products: [productId],
+            customerId: existingCustomerId,
+            customerEmail: user.email ?? undefined,
+            successUrl,
+            returnUrl,
+          }
+        : {
+            products: [productId],
+            externalCustomerId: user.id,
+            customerEmail: user.email ?? undefined,
+            successUrl,
+            returnUrl,
+          };
+      const checkout = await polar.checkouts.create(checkoutPayload);
 
       return NextResponse.json({ url: checkout.url });
     } catch (e) {
       console.error('Polar checkout API path:', e);
+      apiCheckoutError = e instanceof Error ? e.message : 'Unknown Polar API error';
     }
   }
 
@@ -88,13 +98,25 @@ export async function POST(request: NextRequest) {
   const missing: string[] = [];
   if (!process.env.POLAR_ACCESS_TOKEN?.trim()) missing.push('POLAR_ACCESS_TOKEN');
   if (!productId) missing.push('POLAR_PRODUCT_ID');
+  const env = process.env.POLAR_SERVER?.trim().toLowerCase();
+  const tokenPrefix = process.env.POLAR_ACCESS_TOKEN?.trim().slice(0, 10) ?? '';
+  const maybeSandboxToken = tokenPrefix.startsWith('polar_oat_');
+  const envHint =
+    env === 'production' && maybeSandboxToken
+      ? 'POLAR_SERVER is production but token may be from sandbox. Use production token with production server.'
+      : env === 'sandbox' && !maybeSandboxToken
+      ? 'POLAR_SERVER is sandbox but token may be from production.'
+      : undefined;
   return NextResponse.json(
     {
-      error:
-        'Billing not configured. Set POLAR_ACCESS_TOKEN + POLAR_PRODUCT_ID for reliable customer linking (recommended), or set POLAR_CHECKOUT_URL as fallback.',
-      code: 'BILLING_NOT_CONFIGURED',
+      error: apiCheckoutError
+        ? 'Failed to create checkout with Polar API'
+        : 'Billing not configured. Set POLAR_ACCESS_TOKEN + POLAR_PRODUCT_ID for reliable customer linking (recommended), or set POLAR_CHECKOUT_URL as fallback.',
+      code: apiCheckoutError ? 'CHECKOUT_CREATE_FAILED' : 'BILLING_NOT_CONFIGURED',
       missing,
+      apiCheckoutError,
+      envHint,
     },
-    { status: 503 }
+    { status: apiCheckoutError ? 500 : 503 }
   );
 }
